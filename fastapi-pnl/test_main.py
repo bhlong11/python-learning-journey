@@ -41,15 +41,6 @@ def clean_db():
         session.commit()
     yield
 
-# def clean_db():
-#     conn = psycopg2.connect(dataTestURL)
-#     cursor = conn.cursor()
-#     cursor.execute("CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, coin TEXT, action TEXT, amount NUMERIC, price NUMERIC, total NUMERIC)")
-#     cursor.execute("DELETE FROM transactions")
-#     conn.commit()
-#     conn.close()
-#     yield
-
 def test_read_root(client):
     response = client.get("/")
     assert response.status_code == 200
@@ -124,3 +115,8 @@ def test_valid_key(auth_client):
     auth_client.post("/transaction", json={"coin": "bitcoin", "action": "buy", "amount": 0.5, "price": 64000})
     response = auth_client.get("/transactions")
     assert response.status_code != 401
+
+def test_put_invalid_id(auth_client):
+    response = auth_client.put(f"/transactions/999999999", json={"coin": "bitcoin", "action": "buy", "amount": 0.5, "price": 64000})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Invalid id number"}
