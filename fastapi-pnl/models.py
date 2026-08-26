@@ -5,7 +5,7 @@ from decimal import Decimal
 class Base(DeclarativeBase):
     pass
 
-class TransactionIn(Base):
+class Transaction(Base):
     __tablename__ = "transactions"
     id: Mapped[int] = mapped_column(primary_key=True)
     coin: Mapped[str | None] 

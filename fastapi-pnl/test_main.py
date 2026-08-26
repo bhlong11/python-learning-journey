@@ -1,21 +1,22 @@
 import os
 from dotenv import load_dotenv
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import pytest
 from fastapi.testclient import TestClient
 from main import app, get_db
+from sqlalchemy import create_engine, delete
+from sqlalchemy.orm import sessionmaker
+from models import Base, Transaction
 
 load_dotenv()
 dataTestURL = os.getenv("TEST_DATABASE_URL")
 API_KEY = os.getenv("APP_API_KEY")
 
+engine = create_engine(dataTestURL)
+SessionTestLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 def get_test_db():
-    conn = psycopg2.connect(dataTestURL, cursor_factory=RealDictCursor)
-    try: 
-        yield conn
-    finally:
-        conn.close()
+    with SessionTestLocal() as session:
+        yield session
 
 app.dependency_overrides[get_db] = get_test_db
 
@@ -33,13 +34,21 @@ def false_client():
 
 @pytest.fixture(autouse=True)
 def clean_db():
-    conn = psycopg2.connect(dataTestURL)
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, coin TEXT, action TEXT, amount NUMERIC, price NUMERIC, total NUMERIC)")
-    cursor.execute("DELETE FROM transactions")
-    conn.commit()
-    conn.close()
+    Base.metadata.create_all(engine)
+    with SessionTestLocal() as session:
+        stmt = delete(Transaction)
+        session.execute(stmt)
+        session.commit()
     yield
+
+# def clean_db():
+#     conn = psycopg2.connect(dataTestURL)
+#     cursor = conn.cursor()
+#     cursor.execute("CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, coin TEXT, action TEXT, amount NUMERIC, price NUMERIC, total NUMERIC)")
+#     cursor.execute("DELETE FROM transactions")
+#     conn.commit()
+#     conn.close()
+#     yield
 
 def test_read_root(client):
     response = client.get("/")
@@ -75,7 +84,7 @@ def test_post_transaction_invalid_price(auth_client):
 def test_post_transaction(auth_client):
     response = auth_client.post("/transaction", json={"coin": "bitcoin", "action": "buy", "amount": 0.5, "price": 64000})
     assert response.status_code == 200
-    assert response.json()["total"] == 32000
+    assert response.json()["data"]["total"] == 32000
 
 def test_get_transactions(auth_client):
     auth_client.post("/transaction", json={"coin": "bitcoin", "action": "buy", "amount": 0.5, "price": 64000})
