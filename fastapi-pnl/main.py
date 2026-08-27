@@ -3,8 +3,6 @@ from pydantic import BaseModel
 import requests
 import os
 from dotenv import load_dotenv
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from models import Base, Transaction
