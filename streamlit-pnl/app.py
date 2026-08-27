@@ -6,6 +6,7 @@ import os
 
 load_dotenv()
 API_KEY = os.getenv("APP_API_KEY")
+API_URL = os.getenv("API_URL")
 
 st.title("Crypto P&L Tracker")
 
@@ -20,7 +21,7 @@ st.write("You entered:", coin)
 
 # Button
 if st.button("Get Price"):
-    url = f"https://crypto-pnl-api.onrender.com/price/{coin}"
+    url = f"{API_URL}/price/{coin}"
     response = requests.get(url)
     data = response.json()
     if response.status_code == 200:
@@ -31,7 +32,7 @@ if st.button("Get Price"):
 
 # Show transactions
 if st.button("Show All Transactions"):
-    url = "https://crypto-pnl-api.onrender.com/transactions"
+    url = f"{API_URL}/transactions"
     response = requests.get(url, headers={"x-api-key": API_KEY})
     if response.status_code == 200:
         data = response.json()
@@ -57,10 +58,12 @@ infor = {
 }
 
 if st.button("Add Transaction"):
-    url = "https://crypto-pnl-api.onrender.com/transaction"
+    url = f"{API_URL}/transaction"
     response = requests.post(url, headers={"x-api-key": API_KEY}, json=infor)
     if response.status_code == 200:
-        st.success("New transaction is saved successfully!")
+        data = response.json().get("data", {})
+        id = data.get("id", "unknown")
+        st.success(f"Transaction {id} is saved successfully!")
     else:
         error_detail = response.json().get("detail", "Unknown error")
         st.error(f"Error: {error_detail}")

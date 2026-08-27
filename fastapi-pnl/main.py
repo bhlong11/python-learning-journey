@@ -5,37 +5,46 @@ import os
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
+from models import Base, Transaction
 
 load_dotenv()
 dataURL = os.getenv("DATABASE_URL")
+
+engine = create_engine(dataURL)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 API_KEY = os.getenv("APP_API_KEY")
 if not API_KEY:
     raise ValueError("Security error! Pls add the APP_API_KEY to .env to run this")
 
-class Transaction(BaseModel):
+class TransactionIn(BaseModel):
     coin: str
     action: str
     amount: float
     price: float
 
+class TransactionOut(BaseModel):
+    id: int
+    coin: str
+    action: str
+    amount: float
+    price: float
+    total: float
+
+class TransactionOutMessage(BaseModel):
+    message: str
+    data: TransactionOut
+
 app = FastAPI()
 
 def get_db():
-    conn = psycopg2.connect(dataURL, cursor_factory=RealDictCursor)
-    try:
-        yield conn
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        yield session
 
-def init_db():
-    conn = psycopg2.connect(dataURL, cursor_factory=RealDictCursor)
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, coin TEXT, action TEXT, amount NUMERIC, price NUMERIC, total NUMERIC)")
-    conn.commit()
-    conn.close()
-
-init_db()
+Base.metadata.create_all(engine)
 
 def check_auth(x_api_key: str | None = Header(None)):
     if not x_api_key or x_api_key != API_KEY:
@@ -49,22 +58,20 @@ def read_root():
 def about():
     return {"name":"Crypto P&L Tracker", "version":"v1.0", "feature":"Tracking crypto position & Calculating ROI", "author":"Aeron"}
 
-@app.post("/transaction", dependencies=[Depends(check_auth)])
-def create_transaction(tx: Transaction, conn = Depends(get_db)):
+@app.post("/transaction", dependencies=[Depends(check_auth)], response_model=TransactionOutMessage)
+def create_transaction(tx: TransactionIn, session = Depends(get_db)):
     if tx.amount <= 0:
         raise HTTPException(status_code=400, detail="Invalid amount value")
     elif tx.price <= 0:
         raise HTTPException(status_code=400, detail="Invalid price")
     else:
         total = tx.amount * tx.price
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO transactions (coin, action, amount, price, total) VALUES (%s, %s, %s, %s, %s)", 
-            (tx.coin, tx.action, tx.amount, tx.price, total)
-        )
-        conn.commit()
-        return {"message": "Transactions are saved", "coin": tx.coin, "action": tx.action, "amount": tx.amount, "price": tx.price, "total": total}
-    
+        tx_add = Transaction(coin=tx.coin, action=tx.action, amount=tx.amount, price=tx.price, total=total)
+        session.add(tx_add)
+        session.commit()
+        session.refresh(tx_add)
+        return {"message": "Transactions are saved", "data": tx_add}
+
 @app.get("/price/{coin_id}")
 def get_price(coin_id):
     priceUrl = "https://api.coingecko.com/api/v3/simple/price"
@@ -81,44 +88,42 @@ def get_price(coin_id):
     else:
         return {"coin": coin_id, "price": priceData[coin_id]["usd"]}
 
-@app.get("/transactions", dependencies=[Depends(check_auth)])
-def get_transaction(conn = Depends(get_db)):
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM transactions")
-    rows = cursor.fetchall()
-    return rows
+@app.get("/transactions", dependencies=[Depends(check_auth)], response_model=list[TransactionOut])
+def get_transaction(session = Depends(get_db)):
+    txs = session.scalars(select(Transaction)).all()
+    return txs
 
-@app.get("/transactions/{id}", dependencies=[Depends(check_auth)])
-def get_tx_by_id(id:int, conn = Depends(get_db)):
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM transactions WHERE id = %s", (id,))
-    row = cursor.fetchone()
-    if row:
-        return row
+@app.get("/transactions/{id}", dependencies=[Depends(check_auth)], response_model=TransactionOut)
+def get_tx_by_id(id:int, session = Depends(get_db)):
+    stmt = select(Transaction).where(Transaction.id == id)
+    tx_id = session.scalars(stmt).one_or_none()
+    if tx_id: 
+        return tx_id
     else:
         raise HTTPException(status_code=404, detail="Invalid id number")
 
 @app.delete("/transactions/{id}", dependencies=[Depends(check_auth)])
-def del_tx(id:int, conn = Depends(get_db)):
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM transactions WHERE id = %s", (id,))
-    row = cursor.fetchone()
-    if row:
-        cursor.execute("DELETE FROM transactions WHERE id = %s", (id,))
-        conn.commit()
+def del_tx(id:int, session = Depends(get_db)):
+    stmt = select(Transaction).where(Transaction.id == id)
+    tx_del = session.scalars(stmt).one_or_none()
+    if tx_del:
+        session.delete(tx_del)
+        session.commit()
         return {"message": f"Delete transaction {id} successfully"}
     else:
         raise HTTPException(status_code=404, detail="Invalid id number")
 
 @app.put("/transactions/{id}", dependencies=[Depends(check_auth)])
-def alter_tx(id:int, tx: Transaction, conn = Depends(get_db)):
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM transactions WHERE id = %s", (id,))
-    row = cursor.fetchone()
-    if row:
-        new_total = tx.amount * tx.price
-        cursor.execute("UPDATE transactions SET coin = %s, action = %s, amount = %s, price = %s, total = %s WHERE id = %s", (tx.coin, tx.action, tx.amount, tx.price, new_total, id,))
-        conn.commit()
+def alter_tx(id:int, tx: TransactionIn, session = Depends(get_db)):
+    stmt = select(Transaction).where(Transaction.id == id)
+    tx_alt = session.scalars(stmt).one_or_none()
+    if tx_alt:
+        tx_alt.coin = tx.coin
+        tx_alt.action = tx.action
+        tx_alt.amount = tx.amount
+        tx_alt.price = tx.price
+        tx_alt.total = tx.amount * tx.price
+        session.commit()
         return {"message": f"Transaction {id} is updated successfully"}
     else:
         raise HTTPException(status_code=404, detail="Invalid id number")
