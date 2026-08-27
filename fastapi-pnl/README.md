@@ -24,7 +24,7 @@ The API is now at **v1.0**. In this version, you can:
 ## Tech Stack
 
 * **Framework:** FastAPI
-* **Database:** PostgreSQL
+* **Database:** PostgreSQL & ORM (SQLAlchemy)
 * **Test:** Pytest
 * **CI:** GitHub Actions
 * **Frontend:** Streamlit
