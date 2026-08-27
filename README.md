@@ -53,7 +53,7 @@ There are also 5 other endpoints, but they are currently protected with an API k
 ### Tech Stack
 
 * **Framework:** FastAPI
-* **Database:** PostgreSQL & ORM (SQLAlchemy)
+* **Database:** PostgreSQL, SQLAlchemy (ORM), Alembic (migrations)
 * **Testing:** Pytest
 * **CI:** GitHub Actions
 * **Frontend:** Streamlit

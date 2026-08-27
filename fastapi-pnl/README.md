@@ -24,7 +24,7 @@ The API is now at **v1.0**. In this version, you can:
 ## Tech Stack
 
 * **Framework:** FastAPI
-* **Database:** PostgreSQL & ORM (SQLAlchemy)
+* **Database:** PostgreSQL, SQLAlchemy (ORM), Alembic (migrations)
 * **Test:** Pytest
 * **CI:** GitHub Actions
 * **Frontend:** Streamlit
@@ -184,19 +184,67 @@ COINGECKO_API_KEY=your_coingecko_api_key
 APP_API_KEY=your-api-key
 ```
 
-### 5. Run the server
+### 5. Run database migrations
+
+Run:
+
+```bash
+alembic upgrade head
+```
+
+For more details, check the migration section below.
+
+### 6. Run the server
 
 ```bash
 uvicorn main:app --reload
 ```
 
-### 6. Open the API documentation
+### 7. Open the API documentation
 
 Go to:
 
 `http://127.0.0.1:8000/docs`
 
 From there, you can explore and test the API.
+
+## Migration
+
+### 1. Run migrations when setting up
+
+After creating your `.env` file, make sure to run:
+
+```bash
+alembic upgrade head
+```
+
+Otherwise, no tables will be created because Alembic now handles the database migrations.
+
+### 2. Create a migration whenever you change the model
+
+Anytime you make changes to `models.py`, make sure to create a new migration.
+
+Here are the steps:
+
+* Update `models.py`
+* Run:
+
+```bash
+alembic revision --autogenerate -m "describe_your_change_here"
+```
+
+* Carefully review the new migration file inside `alembic/versions/`
+* Run:
+
+```bash
+alembic upgrade head
+```
+
+### 3. Remember that the app no longer creates tables automatically
+
+There is no longer a `create_all` command in the app, so the app will not create the tables automatically anymore.
+
+That's why you need to run the migrations first. Otherwise, the app may crash because the required tables don't exist.
 
 ## Running Tests
 
