@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from main import app, get_db
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import sessionmaker
-from models import Base, Transaction
+from models import Transaction
 
 load_dotenv()
 dataTestURL = os.getenv("TEST_DATABASE_URL")
@@ -34,7 +34,6 @@ def false_client():
 
 @pytest.fixture(autouse=True)
 def clean_db():
-    Base.metadata.create_all(engine)
     with SessionTestLocal() as session:
         stmt = delete(Transaction)
         session.execute(stmt)
