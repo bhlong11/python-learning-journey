@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
-from models import Base, Transaction
+from models import Transaction
 
 load_dotenv()
 dataURL = os.getenv("DATABASE_URL")
@@ -41,8 +41,6 @@ app = FastAPI()
 def get_db():
     with SessionLocal() as session:
         yield session
-
-Base.metadata.create_all(engine)
 
 def check_auth(x_api_key: str | None = Header(None)):
     if not x_api_key or x_api_key != API_KEY:
