@@ -89,7 +89,13 @@ def test_get_tx_by_id(auth_client):
     id = rows.json()[0]["id"]
     response = auth_client.get(f"/transactions/{id}")
     assert response.status_code == 200
-    assert response.json() == {"id": id, "coin": "bitcoin", "action": "buy", "amount": 0.5, "price": 64000, "total": 32000}
+    assert response.json()["id"] == id
+    assert response.json()["coin"] == "bitcoin"
+    assert response.json()["action"] == "buy"
+    assert response.json()["amount"] == 0.5
+    assert response.json()["price"] == 64000
+    assert response.json()["total"] == 32000
+    assert response.json()["created_at"] is not None
 
 def test_delete_tx_by_id(auth_client):
     auth_client.post("/transaction", json={"coin": "bitcoin", "action": "buy", "amount": 0.5, "price": 64000})

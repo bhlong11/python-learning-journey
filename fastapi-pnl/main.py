@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from models import Transaction
+from datetime import datetime
 
 load_dotenv()
 dataURL = os.getenv("DATABASE_URL")
@@ -31,6 +32,7 @@ class TransactionOut(BaseModel):
     amount: float
     price: float
     total: float
+    created_at: datetime | None
 
 class TransactionOutMessage(BaseModel):
     message: str
