@@ -248,12 +248,38 @@ That's why you need to run the migrations first. Otherwise, the app may crash be
 
 ## Running Tests
 
-While running tests for the API endpoints, I wanted to avoid touching the production database. That's why there is a separate database used only for testing.
+When running tests for the API endpoints, I wanted to avoid touching the production database. Instead, I set up a separate PostgreSQL database using a Docker container specifically for testing.
 
-Add the following to your `.env`:
+For every test run, the tests will only run against your local test database and won't overlap with or affect any other database. This makes the tests faster and removes the reliance on third-party services. Once the tests are done, the container can simply be deleted.
 
-```env
-TEST_DATABASE_URL=your_test_postgres_connection_string
+To do this, first, you need to have Docker Desktop installed. You can download it from docker.com.
+
+Then run:
+
+```bash
+docker run --name pnl-test-db \
+  -e POSTGRES_PASSWORD=testpass \
+  -e POSTGRES_DB=pnl_test \
+  -p 5432:5432 \
+  -d postgres:16
+```
+
+For later sessions, the container will be stopped after you shut down your machine or quit Docker Desktop. Start it again with:
+
+```bash
+docker start pnl-test-db
+```
+
+Then change your `TEST_DATABASE_URL` in the `.env` file to:
+
+```text
+postgresql://postgres:testpass@localhost:5432/pnl_test
+```
+
+Next, create the database schema using Alembic:
+
+```bash
+DATABASE_URL="postgresql://postgres:testpass@localhost:5432/pnl_test" alembic upgrade head
 ```
 
 Then run:
