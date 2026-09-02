@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from pydantic import BaseModel
-import requests
+import httpx
+from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
@@ -12,6 +13,18 @@ load_dotenv()
 dataURL = os.getenv("DATABASE_URL")
 
 engine = create_engine(dataURL)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    http_client = httpx.AsyncClient()
+    app.state.http_client = http_client
+    yield
+    await http_client.aclose()
+
+app = FastAPI(lifespan=lifespan)
+
+def get_http_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.http_client
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -37,8 +50,6 @@ class TransactionOut(BaseModel):
 class TransactionOutMessage(BaseModel):
     message: str
     data: TransactionOut
-
-app = FastAPI()
 
 def get_db():
     with SessionLocal() as session:
@@ -71,14 +82,14 @@ def create_transaction(tx: TransactionIn, session = Depends(get_db)):
         return {"message": "Transactions are saved", "data": tx_add}
 
 @app.get("/price/{coin_id}")
-def get_price(coin_id):
+async def get_price(coin_id: str, http_client: httpx.AsyncClient = Depends(get_http_client)):
     priceUrl = "https://api.coingecko.com/api/v3/simple/price"
     headers = {"x-cg-demo-api-key": os.getenv("COINGECKO_API_KEY")}
     params = {
         "ids": coin_id,
         "vs_currencies": "usd"
     }
-    response = requests.get(priceUrl, headers=headers, params=params)
+    response = await http_client.get(priceUrl, headers=headers, params=params)
     priceData = response.json()
 
     if coin_id not in priceData:

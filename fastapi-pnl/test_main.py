@@ -22,15 +22,18 @@ app.dependency_overrides[get_db] = get_test_db
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as client:
+        yield client
 
 @pytest.fixture
 def auth_client():
-    return TestClient(app, headers={"x-api-key": API_KEY})
+    with TestClient(app, headers={"x-api-key": API_KEY}) as auth_client:
+        yield auth_client
 
 @pytest.fixture
 def false_client():
-    return TestClient(app, headers={"x-api-key": "invalid key"})
+    with TestClient(app, headers={"x-api-key": "invalid key"}) as false_client:
+        yield false_client
 
 @pytest.fixture(autouse=True)
 def clean_db():
