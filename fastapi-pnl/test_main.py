@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 import pytest
 from fastapi.testclient import TestClient
-from main import app, get_db
+from main import app, get_db, calculate_transactions
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import sessionmaker
 from models import Transaction
@@ -128,3 +128,92 @@ def test_put_invalid_id(auth_client):
     response = auth_client.put(f"/transactions/999999999", json={"coin": "bitcoin", "action": "buy", "amount": 0.5, "price": 64000})
     assert response.status_code == 404
     assert response.json() == {"detail": "Invalid id number"}
+
+def test_calculate_transactions_single_buy():
+    transactions = [Transaction(coin="bitcoin", action="buy", amount=1, price=75000, total=75000)]
+    prices = {"bitcoin": 78587}
+    position_data, portfolio_data = calculate_transactions(transactions, prices)
+    assert position_data["bitcoin"]["total_holding"] == 1
+    assert position_data["bitcoin"]["avg_entry_price"] == 75000
+    assert position_data["bitcoin"]["current_price"] == 78587
+    assert position_data["bitcoin"]["percentage"] == pytest.approx(4.78, rel=0.01)
+    assert position_data["bitcoin"]["pnl"] == 3587
+    assert portfolio_data["holding_cost"] == 75000
+    assert portfolio_data["portfolio_current_value"] == 78587
+    assert portfolio_data["percentage"] == pytest.approx(4.78, rel=0.01)
+    assert portfolio_data["portfolio_pnl"] == 3587
+
+def test_calculate_transactions_two_buys():
+    transactions = [
+        Transaction(coin="bitcoin", action="buy", amount=1, price=75000, total=75000),
+        Transaction(coin="bitcoin", action="buy", amount=3, price=70000, total=210000),
+    ]
+    prices = {"bitcoin": 78587}
+    position_data, portfolio_data = calculate_transactions(transactions, prices)
+    assert position_data["bitcoin"]["total_holding"] == 4
+    assert position_data["bitcoin"]["avg_entry_price"] == 71250
+    assert position_data["bitcoin"]["current_price"] == 78587
+    assert position_data["bitcoin"]["percentage"] == pytest.approx(10.29, rel=0.01)
+    assert position_data["bitcoin"]["pnl"] == 29348
+    assert portfolio_data["holding_cost"] == 285000
+    assert portfolio_data["portfolio_current_value"] == 314348
+    assert portfolio_data["percentage"] == pytest.approx(10.29, rel=0.01)
+    assert portfolio_data["portfolio_pnl"] == 29348
+
+def test_calculate_transactions_buy_and_sell():
+    transactions = [
+        Transaction(coin="bitcoin", action="buy", amount=2, price=50000, total=100000),
+        Transaction(coin="bitcoin", action="sell", amount=1, price=80000, total=80000),
+    ]
+    prices = {"bitcoin": 78587}
+    position_data, portfolio_data = calculate_transactions(transactions, prices)
+    assert position_data["bitcoin"]["total_holding"] == 1
+    assert position_data["bitcoin"]["avg_entry_price"] == 50000
+    assert position_data["bitcoin"]["current_price"] == 78587
+    assert position_data["bitcoin"]["percentage"] == pytest.approx(57.17, rel=0.01)
+    assert position_data["bitcoin"]["pnl"] == 28587
+    assert portfolio_data["holding_cost"] == 50000
+    assert portfolio_data["portfolio_current_value"] == 78587
+    assert portfolio_data["percentage"] == pytest.approx(57.17, rel=0.01)
+    assert portfolio_data["portfolio_pnl"] == 28587
+
+def test_calculate_transactions_no_holding():
+    transactions = [
+        Transaction(coin="bitcoin", action="buy", amount=2, price=50000, total=100000),
+        Transaction(coin="bitcoin", action="sell", amount=2, price=80000, total=80000),
+    ]
+    prices = {"bitcoin": 78587}
+    position_data, portfolio_data = calculate_transactions(transactions, prices)
+    assert position_data == {}
+    assert portfolio_data["holding_cost"] == 0
+    assert portfolio_data["portfolio_current_value"] == 0
+    assert portfolio_data["percentage"] == 0
+    assert portfolio_data["portfolio_pnl"] == 0
+
+def test_calculate_transactions_sell_more_than_holding():
+    transactions = [
+        Transaction(coin="bitcoin", action="buy", amount=2, price=50000, total=100000),
+        Transaction(coin="bitcoin", action="sell", amount=3, price=80000, total=80000),
+    ]
+    prices = {"bitcoin": 78587}
+    with pytest.raises(ValueError):
+        calculate_transactions(transactions, prices)
+
+def test_calculate_transactions_invalid_coin():
+    transactions = [
+        Transaction(coin="etherem", action="buy", amount=2, price=50000, total=100000)
+    ]
+    prices = {}
+    position_data, portfolio_data = calculate_transactions(transactions, prices)
+    assert position_data == {}
+    assert portfolio_data["holding_cost"] == 0
+    assert portfolio_data["portfolio_current_value"] == 0
+    assert portfolio_data["percentage"] == 0
+    assert portfolio_data["portfolio_pnl"] == 0
+
+def test_calculate_transactions_empty_transactions():
+    transactions = []
+    prices = {}
+    position_data, portfolio_data = calculate_transactions(transactions, prices)
+    assert position_data == {}
+    assert portfolio_data == {}
