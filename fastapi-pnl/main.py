@@ -32,6 +32,9 @@ API_KEY = os.getenv("APP_API_KEY")
 if not API_KEY:
     raise ValueError("Security error! Pls add the APP_API_KEY to .env to run this")
 
+class PriceServiceError(Exception):
+    pass
+
 class TransactionIn(BaseModel):
     coin: str
     action: str
@@ -136,3 +139,117 @@ def alter_tx(id:int, tx: TransactionIn, session = Depends(get_db)):
         return {"message": f"Transaction {id} is updated successfully"}
     else:
         raise HTTPException(status_code=404, detail="Invalid id number")
+
+def calculate_transactions(transactions: list[TransactionOut], prices) -> dict:
+    if not transactions:
+        portfolioData = {}
+        positionData = {}
+        return positionData, portfolioData
+    coinList = []
+    positionData = {}
+    portfolioValue = 0
+    holdingCost = 0
+    for t in transactions:
+        if t.coin not in coinList:
+            coinList.append(t.coin)
+    for c in coinList:
+        if c not in prices:
+            continue
+        coinHolding = 0
+        coinBuyAmount = 0
+        currentPrice = prices[c]
+        coinPrincipal = 0
+        for t in transactions:
+            if t.coin == c:
+                if t.action == "buy":
+                    if t.amount > 0:
+                        coinHolding += t.amount
+                        coinBuyAmount += t.amount
+                        coinPrincipal += t.total
+                    else:
+                        raise ValueError(f"Invalid buy transaction. Buy amount must be more than 0!")
+                elif t.action == "sell":
+                    coinHolding -= t.amount
+        if coinHolding == 0:
+            continue
+        if coinHolding < 0:
+            raise ValueError(f"Coin {c} has a wrong transaction log. You're selling more than what you have.")
+        if coinHolding > 0:
+            if coinPrincipal > 0:
+                avgEntry = float(coinPrincipal) / float(coinBuyAmount)
+                currentValue = float(coinHolding) * float(currentPrice)
+                percentage = ((float(currentPrice) / float(avgEntry)) - 1) * 100
+                PnL = (float(currentPrice) - float(avgEntry)) * float(coinHolding)
+                portfolioValue += float(currentValue)
+                # calculating the cost basis of the current holding 
+                holdingCost += float(coinHolding) * float(avgEntry)
+                positionData[c] = {
+                    "total_holding": coinHolding, 
+                    "avg_entry_price": avgEntry,
+                    "current_price": currentPrice,
+                    "percentage": percentage,
+                    "pnl": PnL,
+                }
+            else:
+                raise ValueError(f"Coin {c} has transactions with zero total value. Pls check the transaction log.")
+    if holdingCost > 0:
+        portfolioPercentage = ((float(portfolioValue) / float(holdingCost)) - 1) * 100
+        portfolioPnL = float(portfolioValue) - float(holdingCost)
+    else:
+        portfolioPercentage = 0
+        portfolioPnL = 0
+    portfolioData = {
+        "holding_cost": holdingCost,
+        "portfolio_current_value": portfolioValue,
+        "percentage": portfolioPercentage,
+        "portfolio_pnl": portfolioPnL,
+    }
+    return positionData, portfolioData
+
+def request_price(coin_list: list) -> tuple[dict, list]:
+    validCoin = {}
+    invalidCoin = []
+    if not coin_list:
+        return {}, []
+    ids = ",".join(coin_list)
+    priceUrl = "https://api.coingecko.com/api/v3/simple/price"
+    headers = {"x-cg-demo-api-key": os.getenv("COINGECKO_API_KEY")}
+    params = {
+        "ids": ids,
+        "vs_currencies": "usd"
+    }
+    response = httpx.get(priceUrl, headers=headers, params=params)
+    if response.status_code == 200:
+        priceData = response.json()
+        for c in coin_list:
+            if c not in priceData:
+                invalidCoin.append(c)
+            else:
+                validCoin[c] = priceData[c]["usd"]
+        return validCoin, invalidCoin
+    else:
+        raise PriceServiceError(f"Something went wrong with the API endpoint. Status code: {response.status_code}!")
+
+@app.get("/pnl", dependencies=[Depends(check_auth)])
+def get_pnl(session = Depends(get_db)):
+    txs = session.scalars(select(Transaction)).all()
+    coinList = []
+    for tx in txs:
+        if tx.coin not in coinList:
+            coinList.append(tx.coin)
+    try:
+        validCoin, invalidCoin = request_price(coinList)
+    except PriceServiceError as p:
+        error = str(p)
+        raise HTTPException(status_code=502, detail=error)
+
+    try:
+        positionData, portfolioData = calculate_transactions(txs, validCoin)
+        return {
+            "position": positionData, 
+            "portfolio":portfolioData, 
+            "invalid_coin": invalidCoin
+        }
+    except ValueError as e:
+        error = str(e)
+        raise HTTPException(status_code=409, detail=error)
